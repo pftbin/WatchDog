@@ -13,6 +13,16 @@
 #define new DEBUG_NEW
 #endif
 
+static CString FolderFromPath(CString& strFullPath)
+{
+	CString strFolder = _T("");
+	int nPos = strFullPath.ReverseFind('\\');
+	if (nPos == -1)
+		return strFolder;
+	strFolder = strFullPath.Left(nPos);//获取文件夹
+
+	return strFolder;
+}
 
 DWORD WINAPI THREAD_WORK(LPVOID lp)
 {
@@ -419,7 +429,18 @@ DWORD CSobeyWatchDogDlg::WatchProcess()
 					}
 					else
 					{
-						ShellExecute(NULL, _T("open"), iter->first, _T(""), _T(""), SW_SHOW);
+						CString strEXEPath = iter->first;
+						CString strNewWorkFolder = FolderFromPath(strEXEPath);
+						WRITE_LOG(LogerWatchDog, 0, FALSE, _T("CSobeyWatchDogDlg:: WorkExe=[%s], WorkFolder=[%s]"), strEXEPath, strNewWorkFolder);
+
+						TCHAR szOldWorkFolder[MAX_PATH] = { 0 };
+						GetCurrentDirectory(MAX_PATH, szOldWorkFolder);
+						CString strOldWorkFolder; strOldWorkFolder = szOldWorkFolder;
+
+						SetCurrentDirectory(strNewWorkFolder);
+						ShellExecute(NULL, _T("open"), iter->first, _T(""), strNewWorkFolder, SW_SHOW);
+						SetCurrentDirectory(strOldWorkFolder);
+
 						iter->second.nStatus		= STATUS_PROCESS_STARTING;
 						iter->second.nAbnormalCount = 0;
 						WRITE_LOG(LogerWatchDog, 0, FALSE, _T("CSobeyWatchDogDlg::WatchProcess Start Process[%s]"), iter->first);
@@ -433,6 +454,36 @@ DWORD CSobeyWatchDogDlg::WatchProcess()
 		bStart = FALSE;
 	}
 	return 0;
+}
+void CSobeyWatchDogDlg::StartProcess(const CString& strExePath)
+{
+	// 将CString转换为LPCTSTR类型
+	LPCTSTR lpParam = (LPCTSTR)strExePath;
+
+	// 创建进程的相关参数
+	STARTUPINFO si;
+	PROCESS_INFORMATION pi;
+
+	// 初始化STARTUPINFO结构
+	ZeroMemory(&si, sizeof(si));
+	si.cb = sizeof(si);
+
+	// 创建进程
+	if (CreateProcess(NULL, (LPTSTR)lpParam, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi))
+	{
+		// 等待进程结束
+		WaitForSingleObject(pi.hProcess, INFINITE);
+
+		// 关闭进程和线程的句柄
+		CloseHandle(pi.hProcess);
+		CloseHandle(pi.hThread);
+	}
+	else
+	{
+		// 创建进程失败
+		DWORD error = GetLastError();
+		WRITE_LOG(LogerWatchDog, 0, FALSE, _T("Failed to create process. Error code: %d"), error);
+	}
 }
 
 DWORD CSobeyWatchDogDlg::IsExistProcess(CString strName, CString strPath)
